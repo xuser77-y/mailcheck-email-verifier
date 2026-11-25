@@ -131,6 +131,25 @@ const server = http.createServer(async (req, res) => {
           // free proxies that pass port 25, then verify through the pool,
           // rotating to the next proxy the moment one times out.
           sendStatus('Hunting for free proxies that pass port 25…');
+          // When the pool runs dry mid-run, the rotator calls this to hunt a
+          // fresh batch (skipping proxies already tried) — the run loops
+          // like this until the whole list is done.
+          let refillRound = 0;
+          const onRefill = async (exclude) => {
+            refillRound++;
+            sendStatus('Proxy pool ran dry — hunting a fresh batch (round ' + refillRound + ')…');
+            const fresh = await findWorkingProxies({
+              scan: 300,
+              want: 8,
+              exclude,
+              onProgress: ({ tested, total, found }) =>
+                sendStatus('Testing proxies… ' + tested + '/' + total + ' tried, ' + found + ' working so far'),
+            });
+            sendStatus(fresh.length
+              ? 'Found ' + fresh.length + ' fresh ' + (fresh.length === 1 ? 'proxy' : 'proxies') + ' — continuing.'
+              : 'No fresh proxies this round — retrying the earlier pool.');
+            return fresh;
+          };
           try {
             const working = await findWorkingProxies({
               scan: 100,
@@ -139,8 +158,8 @@ const server = http.createServer(async (req, res) => {
                 sendStatus('Testing proxies… ' + tested + '/' + total + ' tried, ' + found + ' working so far'),
             });
             if (working.length) {
-              options.rotator = createRotator(working);
-              sendStatus('Route: proxy pool — ' + working.length + ' working ' + (working.length === 1 ? 'proxy' : 'proxies') + ', rotating to the next on the first timeout.');
+              options.rotator = createRotator(working, { onRefill });
+              sendStatus('Route: proxy pool — ' + working.length + ' working ' + (working.length === 1 ? 'proxy' : 'proxies') + ', rotating to the next on the first timeout, refilling when the pool runs dry.');
             } else {
               sendStatus('Route: direct connection (no working proxy found). If your ISP blocks port 25, mailbox checks will come back "unknown".');
             }

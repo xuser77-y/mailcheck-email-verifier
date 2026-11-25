@@ -203,6 +203,19 @@ async function main() {
   r = await verifyEmail('valid@mock.test', { ...opts, rotator: createRotator([deadProxy, { ...deadProxy, port: 2 }]) });
   check('all proxies dead -> unknown (not a crash)', r.status === 'unknown', JSON.stringify(r));
 
+  console.log('\nProxy refill check (pool runs dry mid-run):');
+  r = await verifyEmail('valid@mock.test', {
+    ...opts,
+    rotator: createRotator([deadProxy], { onRefill: async () => [goodProxy] }),
+  });
+  check('pool dry -> fresh hunt refills -> valid', r.status === 'valid', JSON.stringify(r));
+
+  r = await verifyEmail('valid@mock.test', {
+    ...opts,
+    rotator: createRotator([deadProxy], { onRefill: async () => [], maxRefills: 2 }),
+  });
+  check('no proxies anywhere -> unknown after bounded refills', r.status === 'unknown', JSON.stringify(r));
+
   console.log('\nLookup-failure check (regression: gmail must never read as "no MX"):');
   {
     const savedMx = dns.promises.resolveMx;
