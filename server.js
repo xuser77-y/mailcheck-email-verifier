@@ -146,7 +146,6 @@ const server = http.createServer(async (req, res) => {
           });
           try {
             const working = await findWorkingProxies({
-              scan: 100,
               want: 3,
               oversample: 1,
               onProgress: ({ tested, total, found }) =>
