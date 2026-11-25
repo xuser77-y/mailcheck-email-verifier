@@ -7,6 +7,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { verifyList } = require('./lib/verifier');
+const { findWorkingProxies, createRotator } = require('./lib/proxypool');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -35,6 +36,7 @@ function parseOptions(body) {
   if (Number.isFinite(+o.timeoutMs)) out.timeoutMs = Math.min(30000, Math.max(3000, +o.timeoutMs));
   if (typeof o.helo === 'string' && o.helo.trim()) out.helo = o.helo.trim().slice(0, 63);
   if (typeof o.mailFrom === 'string' && o.mailFrom.trim()) out.mailFrom = o.mailFrom.trim().slice(0, 120);
+  if (o.autoProxy === true) out.autoProxy = true;
   if (o.proxy && typeof o.proxy.host === 'string' && o.proxy.host.trim()) {
     out.proxy = {
       host: o.proxy.host.trim(),
@@ -98,7 +100,31 @@ const server = http.createServer(async (req, res) => {
       const counts = { total: emails.length, valid: 0, invalid: 0, risky: 0, unknown: 0, disposable: 0 };
       const byDomain = {};
       const started = Date.now();
+      const sendStatus = (message) => res.write(JSON.stringify({ type: 'status', message }) + '\n');
       try {
+        if (options.autoProxy) {
+          // Auto mode: hunt for free proxies that pass port 25, then verify
+          // through the pool, rotating whenever one stops answering.
+          sendStatus('Hunting for free proxies that pass port 25…');
+          try {
+            const working = await findWorkingProxies({
+              scan: 60,
+              want: 5,
+              onProgress: ({ tested, total, found }) =>
+                sendStatus('Testing proxies… ' + tested + '/' + total + ' tried, ' + found + ' working so far'),
+            });
+            if (working.length) {
+              options.rotator = createRotator(working);
+              delete options.proxy;
+              sendStatus('Found ' + working.length + ' working ' + (working.length === 1 ? 'proxy' : 'proxies') + ' — verifying through the pool, rotating automatically when one fails.');
+            } else {
+              sendStatus('No working proxy in this batch — verifying directly. If your ISP blocks port 25, mailbox checks will come back "unknown".');
+            }
+          } catch (e) {
+            sendStatus('Proxy hunt failed (' + e.message + ') — verifying directly.');
+          }
+          delete options.autoProxy;
+        }
         await verifyList(emails, {
           ...options,
           onStage: (email, stage, detail, index) => {

@@ -51,7 +51,15 @@ automatically.
 
 ## Changing the outgoing IP (proxy)
 
-By default the mailbox probes go out from this machine's IP. Some mail
+**Auto mode (recommended):** tick **"Auto mode — find free proxies and
+rotate automatically"** in the Outgoing IP section and just press Verify.
+MailCheck fetches a fresh free SOCKS5 list, tests each proxy against a real
+mail server on port 25, keeps the ones that answer, and verifies through
+that pool. When a proxy stops answering (they get flagged fast — one IP
+probing many mailboxes looks like spam), the run rotates to the next proxy
+by itself. No searching, no copy-paste.
+
+**Manual mode:** by default the mailbox probes go out from this machine's IP. Some mail
 servers throttle or block residential / datacentre IPs, which shows up as a
 lot of `unknown` results. In the **Outgoing IP** section you can route the
 probes through a **SOCKS5 proxy** (host, port, optional username/password) —
