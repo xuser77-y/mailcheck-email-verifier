@@ -184,6 +184,17 @@ async function main() {
   });
   check('dead proxy -> unknown (not a crash)', r.status === 'unknown', JSON.stringify(r));
 
+  console.log('\nProxy rotation check (auto mode):');
+  const { createRotator } = require('../lib/proxypool');
+  const deadProxy = { host: '127.0.0.1', port: 1, username: '', password: '' };
+  const goodProxy = { host: '127.0.0.1', port: socksPort, username: '', password: '' };
+
+  r = await verifyEmail('valid@mock.test', { ...opts, rotator: createRotator([deadProxy, goodProxy]) });
+  check('dead proxy first, rotation saves the check -> valid', r.status === 'valid', JSON.stringify(r));
+
+  r = await verifyEmail('valid@mock.test', { ...opts, rotator: createRotator([deadProxy, { ...deadProxy, port: 2 }]) });
+  check('all proxies dead -> unknown (not a crash)', r.status === 'unknown', JSON.stringify(r));
+
   console.log('\nLookup-failure check (regression: gmail must never read as "no MX"):');
   {
     const savedMx = dns.promises.resolveMx;

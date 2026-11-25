@@ -69,8 +69,15 @@
       </div>
 
       <details class="proxy">
-        <summary>Outgoing IP — use a proxy <span class="muted">(optional)</span></summary>
-        <p class="hint">By default checks go out from this machine's IP. If a mail server blocks or throttles that IP, route the checks through a SOCKS5 proxy instead — the mail server will see the proxy's IP.</p>
+        <summary>Outgoing IP — proxies <span class="muted">(optional)</span></summary>
+        <div class="field" style="margin-top:12px">
+          <label for="autoProxy" style="display:flex;gap:8px;align-items:flex-start;font-weight:600;cursor:pointer">
+            <input type="checkbox" id="autoProxy" style="width:auto;margin-top:3px">
+            <span>Auto mode — find free proxies and rotate automatically <span class="muted" style="font-weight:400">(recommended if your ISP blocks port 25)</span></span>
+          </label>
+          <p class="hint">When you press Verify, MailCheck first hunts for free SOCKS5 proxies that pass port 25, then runs the checks through them. When one proxy stops answering, it switches to the next by itself. No searching, no copy-paste. This ignores the manual proxy fields below.</p>
+        </div>
+        <p class="hint">Or set one proxy by hand. By default checks go out from this machine's IP; through a SOCKS5 proxy, the mail server sees the proxy's IP instead.</p>
         <div class="field">
           <label for="proxyHost">SOCKS5 proxy host</label>
           <input type="text" id="proxyHost" placeholder="e.g. 45.12.34.56" autocomplete="off">

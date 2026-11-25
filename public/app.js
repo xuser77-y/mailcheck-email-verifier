@@ -152,7 +152,9 @@ $('runBtn').addEventListener('click', async () => {
     mailFrom: $('mailFrom').value.trim() || 'verify@mailcheck.local',
   };
   const proxyHost = $('proxyHost').value.trim();
-  if (proxyHost) {
+  if ($('autoProxy').checked) {
+    options.autoProxy = true;
+  } else if (proxyHost) {
     options.proxy = {
       host: proxyHost,
       port: parseInt($('proxyPort').value, 10) || 1080,
@@ -186,7 +188,9 @@ $('runBtn').addEventListener('click', async () => {
         if (!line) continue;
         let msg;
         try { msg = JSON.parse(line); } catch (_) { continue; }
-        if (msg.type === 'result') {
+        if (msg.type === 'status') {
+          $('runStatus').textContent = msg.message;
+        } else if (msg.type === 'result') {
           allResults.push(msg.result);
           const pct = Math.round((allResults.length / emails.length) * 100);
           $('progressBar').style.width = pct + '%';
