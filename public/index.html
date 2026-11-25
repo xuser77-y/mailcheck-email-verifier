@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MailCheck — Email Verifier</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <div class="brand"><span class="brand-mark">M</span> MailCheck</div>
+    <div class="topbar-note">SMTP mailbox verification · no email is ever sent</div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="intro">
+    <h1>Verify a list of email addresses</h1>
+    <p>Paste a list or upload a file. MailCheck checks each address against its real mail server — syntax, mail server (MX), then a mailbox probe that disconnects before sending anything. You get totals, a success rate, a per-domain breakdown, and an export in the format you choose.</p>
+  </section>
+
+  <div class="grid">
+    <!-- Input column -->
+    <section class="card">
+      <h2>1 · Your list</h2>
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept=".txt,.csv,.tsv" hidden>
+        <p><strong>Drop a .txt or .csv file here</strong></p>
+        <p class="muted">or <button type="button" class="linklike" id="browseBtn">browse your files</button></p>
+        <p class="muted small" id="fileName"></p>
+      </div>
+      <label class="field-label" for="pasteBox">Or paste emails (one per line, or mixed text)</label>
+      <textarea id="pasteBox" rows="9" placeholder="name@company.com&#10;info@clinic.ae&#10;..."></textarea>
+      <div class="row between">
+        <span class="muted" id="listCount">0 unique addresses</span>
+        <button type="button" class="btn ghost" id="clearBtn">Clear</button>
+      </div>
+
+      <h2 class="mt">2 · Settings</h2>
+      <div class="settings">
+        <div class="field">
+          <label for="concurrency">Checks at the same time</label>
+          <input type="number" id="concurrency" value="5" min="1" max="20">
+          <span class="hint">Higher is faster, but mail servers may throttle you.</span>
+        </div>
+        <div class="field">
+          <label for="timeout">Timeout per check (ms)</label>
+          <input type="number" id="timeout" value="12000" min="3000" max="30000" step="1000">
+        </div>
+        <div class="field">
+          <label for="helo">HELO hostname</label>
+          <input type="text" id="helo" value="mailcheck.local">
+          <span class="hint">The name your tool announces to mail servers.</span>
+        </div>
+        <div class="field">
+          <label for="mailFrom">MAIL FROM address</label>
+          <input type="text" id="mailFrom" value="verify@mailcheck.local">
+          <span class="hint">Shown to mail servers during the probe. No mail is sent to it.</span>
+        </div>
+      </div>
+
+      <details class="proxy">
+        <summary>Outgoing IP — use a proxy <span class="muted">(optional)</span></summary>
+        <p class="hint">By default checks go out from this machine's IP. If a mail server blocks or throttles that IP, route the checks through a SOCKS5 proxy instead — the mail server will see the proxy's IP.</p>
+        <div class="field">
+          <label for="proxyHost">SOCKS5 proxy host</label>
+          <input type="text" id="proxyHost" placeholder="e.g. 45.12.34.56" autocomplete="off">
+        </div>
+        <div class="row">
+          <div class="field grow">
+            <label for="proxyPort">Port</label>
+            <input type="number" id="proxyPort" value="1080" min="1" max="65535">
+          </div>
+          <div class="field grow">
+            <label for="proxyUser">Username <span class="muted">(optional)</span></label>
+            <input type="text" id="proxyUser" autocomplete="off">
+          </div>
+          <div class="field grow">
+            <label for="proxyPass">Password <span class="muted">(optional)</span></label>
+            <input type="password" id="proxyPass" autocomplete="off">
+          </div>
+        </div>
+        <p class="hint">Leave the host empty to use your own IP. The proxy is used only for the mailbox probes, nothing else.</p>
+      </details>
+
+      <button type="button" class="btn primary big" id="runBtn">Verify list</button>
+      <p class="muted small center" id="runStatus"></p>
+    </section>
+
+    <!-- Results column -->
+    <section class="card">
+      <h2>3 · Results</h2>
+
+      <div class="progress" id="progressWrap" hidden>
+        <div class="progress-bar" id="progressBar" style="width:0%"></div>
+        <span id="progressText">0 / 0</span>
+      </div>
+
+      <div class="stats" id="stats">
+        <div class="stat"><span class="stat-num" id="stTotal">–</span><span class="stat-label">Total checked</span></div>
+        <div class="stat ok"><span class="stat-num" id="stValid">–</span><span class="stat-label">Valid</span></div>
+        <div class="stat bad"><span class="stat-num" id="stInvalid">–</span><span class="stat-label">Invalid</span></div>
+        <div class="stat warn"><span class="stat-num" id="stRisky">–</span><span class="stat-label">Risky (catch-all)</span></div>
+        <div class="stat"><span class="stat-num" id="stUnknown">–</span><span class="stat-label">Unknown</span></div>
+        <div class="stat"><span class="stat-num" id="stDisp">–</span><span class="stat-label">Disposable</span></div>
+        <div class="stat wide"><span class="stat-num" id="stRate">–</span><span class="stat-label">Success rate (valid / total)</span></div>
+        <div class="stat wide"><span class="stat-num" id="stDeliverable">–</span><span class="stat-label">Deliverable rate (valid + risky / total)</span></div>
+      </div>
+
+      <div id="analysis" hidden>
+        <h3>What this means</h3>
+        <ul id="analysisList" class="analysis"></ul>
+        <h3>By domain</h3>
+        <table class="table" id="domainTable">
+          <thead><tr><th>Domain</th><th>Addresses</th><th>Valid</th><th>Valid rate</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="export" id="exportBox" hidden>
+        <h3>Download results</h3>
+        <div class="row">
+          <label>Format
+            <select id="exportFormat">
+              <option value="csv">CSV (.csv)</option>
+              <option value="json">JSON (.json)</option>
+              <option value="txt">Plain text (.txt)</option>
+            </select>
+          </label>
+          <label>Include
+            <select id="exportScope">
+              <option value="all">All results</option>
+              <option value="valid">Valid only</option>
+              <option value="invalid">Invalid only</option>
+              <option value="risky">Risky (catch-all) only</option>
+              <option value="unknown">Unknown only</option>
+              <option value="disposable">Disposable only</option>
+            </select>
+          </label>
+          <button type="button" class="btn" id="downloadBtn">Download</button>
+        </div>
+        <p class="hint">CSV and JSON include status, reason, domain and check time. TXT contains one email address per line.</p>
+      </div>
+
+      <div class="filter-row" id="filterRow" hidden>
+        <span class="muted">Show:</span>
+        <button type="button" class="chip active" data-filter="all">All</button>
+        <button type="button" class="chip" data-filter="valid">Valid</button>
+        <button type="button" class="chip" data-filter="invalid">Invalid</button>
+        <button type="button" class="chip" data-filter="risky">Risky</button>
+        <button type="button" class="chip" data-filter="unknown">Unknown</button>
+        <button type="button" class="chip" data-filter="disposable">Disposable</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table" id="resultsTable">
+          <thead><tr><th>Email</th><th>Status</th><th>Reason</th><th>Time</th></tr></thead>
+          <tbody><tr class="empty"><td colspan="4">No results yet. Run a check to see them here.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <footer class="foot">
+    <p class="muted small">How it works: syntax → disposable check → MX lookup → catch-all probe → SMTP <code>RCPT TO</code> probe. The connection is closed before <code>DATA</code>, so no email is ever sent. Statuses: <strong>valid</strong> (mailbox confirmed), <strong>invalid</strong> (rejected or no mail server), <strong>risky</strong> (domain accepts everything — the mailbox cannot be confirmed), <strong>unknown</strong> (server unreachable, greylisted or timed out), <strong>disposable</strong> (temporary provider).</p>
+    <p class="muted small">Note: some providers (notably Gmail) block or rate-limit mailbox probes from residential IPs. If a lot of results come back “unknown”, run from a server/VPS IP or through the proxy option above.</p>
+  </footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
