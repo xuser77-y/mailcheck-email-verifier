@@ -229,6 +229,27 @@ async function main() {
   bg.stop();
   socksSrv2.close();
 
+  console.log('\nSimultaneous hunt + check:');
+  r = await verifyEmail('valid@mock.test', {
+    ...opts,
+    rotator: createRotator([], { hunt: async () => [goodProxy] }),
+  });
+  check('empty pool at run start -> hunt lands a proxy -> check runs', r.status === 'valid', JSON.stringify(r));
+
+  let huntCalls = 0;
+  const slowHunter = createRotator([], {
+    targetPool: 8,
+    hunt: async () => {
+      huntCalls++;
+      if (huntCalls === 1) return [goodProxy2];
+      await new Promise((res) => setTimeout(res, 600));
+      return [];
+    },
+  });
+  const wakeStart = Date.now();
+  const wokenProxy = await slowHunter.ensure();
+  check('checker wakes on the FIRST landed proxy, not the full pool', wokenProxy === goodProxy2 && Date.now() - wakeStart < 400, 'elapsed=' + (Date.now() - wakeStart) + 'ms');
+
   console.log('\nLookup-failure check (regression: gmail must never read as "no MX"):');
   {
     const savedMx = dns.promises.resolveMx;
