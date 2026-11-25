@@ -36,7 +36,7 @@ function parseOptions(body) {
   if (Number.isFinite(+o.timeoutMs)) out.timeoutMs = Math.min(30000, Math.max(3000, +o.timeoutMs));
   if (typeof o.helo === 'string' && o.helo.trim()) out.helo = o.helo.trim().slice(0, 63);
   if (typeof o.mailFrom === 'string' && o.mailFrom.trim()) out.mailFrom = o.mailFrom.trim().slice(0, 120);
-  if (o.autoProxy === true) out.autoProxy = true;
+  if (typeof o.autoProxy === 'boolean') out.autoProxy = o.autoProxy;
   if (o.proxy && typeof o.proxy.host === 'string' && o.proxy.host.trim()) {
     out.proxy = {
       host: o.proxy.host.trim(),
@@ -120,34 +120,35 @@ const server = http.createServer(async (req, res) => {
       const started = Date.now();
       const sendStatus = (message) => res.write(JSON.stringify({ type: 'status', message }) + '\n');
       try {
-        if (!options.autoProxy) {
-          sendStatus(options.proxy
-            ? 'Route: SOCKS5 proxy ' + options.proxy.host + ':' + options.proxy.port
-            : 'Route: direct connection (no SOCKS5 proxy configured)');
-        }
-        if (options.autoProxy) {
-          // Auto mode: hunt for free proxies that pass port 25, then verify
-          // through the pool, rotating whenever one stops answering.
+        if (options.proxy) {
+          sendStatus('Route: SOCKS5 proxy ' + options.proxy.host + ':' + options.proxy.port);
+        } else if (options.autoProxy === false) {
+          sendStatus('Route: direct connection (proxy hunt switched off)');
+        } else {
+          // DEFAULT ROUTE — the proxy hunt. Port 25 is blocked on residential
+          // connections (e.g. Morocco), so a run NEVER goes direct unless a
+          // manual proxy was configured or the hunt found nothing: first find
+          // free proxies that pass port 25, then verify through the pool,
+          // rotating to the next proxy the moment one times out.
           sendStatus('Hunting for free proxies that pass port 25…');
           try {
             const working = await findWorkingProxies({
-              scan: 60,
-              want: 5,
+              scan: 100,
+              want: 8,
               onProgress: ({ tested, total, found }) =>
                 sendStatus('Testing proxies… ' + tested + '/' + total + ' tried, ' + found + ' working so far'),
             });
             if (working.length) {
               options.rotator = createRotator(working);
-              delete options.proxy;
-              sendStatus('Found ' + working.length + ' working ' + (working.length === 1 ? 'proxy' : 'proxies') + ' — verifying through the pool, rotating automatically when one fails.');
+              sendStatus('Route: proxy pool — ' + working.length + ' working ' + (working.length === 1 ? 'proxy' : 'proxies') + ', rotating to the next on the first timeout.');
             } else {
-              sendStatus('No working proxy in this batch — verifying directly. If your ISP blocks port 25, mailbox checks will come back "unknown".');
+              sendStatus('Route: direct connection (no working proxy found). If your ISP blocks port 25, mailbox checks will come back "unknown".');
             }
           } catch (e) {
             sendStatus('Proxy hunt failed (' + e.message + ') — verifying directly.');
           }
-          delete options.autoProxy;
         }
+        delete options.autoProxy;
         await verifyList(emails, {
           ...options,
           onStage: (email, stage, detail, index) => {
