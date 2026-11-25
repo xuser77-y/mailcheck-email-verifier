@@ -3,8 +3,11 @@ const $ = (id) => document.getElementById(id);
 const EMAIL_RE = /[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+/g;
 
 let allResults = [];
+let runEmails = [];
+let stages = [];
 let activeFilter = 'all';
 let running = false;
+let activeIndex = -1;
 
 function extractEmails(text) {
   const found = (text.match(EMAIL_RE) || []).map((e) => e.toLowerCase());
@@ -56,20 +59,46 @@ $('clearBtn').addEventListener('click', () => {
 
 // --- Results rendering ---------------------------------------------------
 function badge(status) {
-  return '<span class="badge ' + status + '">' + status + '</span>';
+  const labels = { risky: 'Review', disposable: 'Disposable', pending: 'In progress' };
+  return '<span class="badge ' + status + '">' + (labels[status] || status) + '</span>';
 }
 
 function renderTable() {
   const tbody = document.querySelector('#resultsTable tbody');
-  const rows = allResults.filter((r) => activeFilter === 'all' || r.status === activeFilter);
-  if (!rows.length) {
-    tbody.innerHTML = '<tr class="empty"><td colspan="4">No results' + (activeFilter === 'all' ? ' yet.' : ' with this status.') + '</td></tr>';
+  const indexes = runEmails.map((_, i) => i).filter((i) => activeFilter === 'all' || (allResults[i] && allResults[i].status === activeFilter));
+  if (!indexes.length) {
+    tbody.innerHTML = '<tr class="empty"><td colspan="4"><strong>' + (runEmails.length ? 'No addresses in this view' : 'Your results will appear here') + '</strong><small>' + (runEmails.length ? 'Choose another status filter.' : 'Add a list to see each address update as it’s checked.') + '</small></td></tr>';
     return;
   }
-  tbody.innerHTML = rows.map((r) =>
-    '<tr><td class="mono">' + escapeHtml(r.email) + '</td><td>' + badge(r.status) + '</td><td>' +
-    escapeHtml(r.reason || '') + '</td><td>' + (r.ms != null ? r.ms + ' ms' : '–') + '</td></tr>'
-  ).join('');
+  tbody.innerHTML = indexes.map(rowMarkup).join('');
+}
+
+function rowMarkup(index) {
+  const result = allResults[index];
+  const current = stages[index];
+  const state = result ? result.status : (current && current.stage === 'complete' ? 'unknown' : 'pending');
+  const detail = result ? (result.reason || '') : (current ? current.detail : 'Waiting for a check');
+  return '<tr data-index="' + index + '"><td class="mono">' + escapeHtml(runEmails[index]) + '</td><td>' + badge(state) + '</td><td>' + escapeHtml(detail) + '</td><td>' + (result && result.ms != null ? result.ms + ' ms' : '–') + '</td></tr>';
+}
+
+function updateRow(index) {
+  const row = document.querySelector('#resultsTable tbody tr[data-index="' + index + '"]');
+  if (row) row.outerHTML = rowMarkup(index);
+}
+
+function updateActivity(index, detail) {
+  if (index >= 0 && runEmails[index]) {
+    activeIndex = index;
+    $('activityEmail').textContent = runEmails[index];
+    $('activityStage').textContent = detail || 'Working';
+  }
+  const completed = allResults.reduce((count, result) => count + (result ? 1 : 0), 0);
+  const active = stages.reduce((count, item, i) => count + (!allResults[i] && item && item.stage !== 'complete' ? 1 : 0), 0);
+  const percent = runEmails.length ? Math.round(completed * 100 / runEmails.length) : 0;
+  $('progressLabel').textContent = completed === runEmails.length ? 'Checks complete' : (active ? active + ' active' : 'Preparing checks') + ' · ' + percent + '% complete';
+  $('progressText').textContent = completed + ' / ' + runEmails.length;
+  $('progressBar').style.width = percent + '%';
+  $('resultsCaption').textContent = completed === runEmails.length ? 'Check complete' : percent + '% complete';
 }
 
 function escapeHtml(s) {
@@ -106,7 +135,14 @@ function renderSummary(s) {
     else lines.push('Weak list — only ' + s.successRate + '% confirmed. Sending to this list as-is would bounce hard and hurt your sender reputation.');
     if (s.invalid) lines.push(s.invalid + ' invalid address' + (s.invalid === 1 ? '' : 'es') + ' — remove these, they will bounce.');
     if (s.risky) lines.push(s.risky + ' on catch-all domains — those servers accept everything, so the mailbox could not be confirmed. Treat them as “maybe”.');
-    if (s.unknown) lines.push(s.unknown + ' unknown — the mail server could not be reached or greylisted the probe. Re-run these later, or from a different IP / proxy.');
+    if (s.unknown) {
+      const timedOut = allResults.filter((r) => r && /timed out on port 25/i.test(r.reason || '')).length;
+      if (timedOut === s.unknown) {
+        lines.push(s.unknown + ' checks timed out while opening SMTP on port 25. This usually means the network or hosting provider blocks outbound SMTP; these addresses are unconfirmed, not invalid. Ask the provider to allow outbound port 25, or run from a network that permits it.');
+      } else {
+        lines.push(s.unknown + ' unknown — a server could not be reached or temporarily refused the check. Unknown does not mean invalid; see each row for its specific reason.');
+      }
+    }
     if (s.disposable) lines.push(s.disposable + ' disposable address' + (s.disposable === 1 ? '' : 'es') + ' — temporary inboxes, not real leads.');
     if (s.duplicatesRemoved) lines.push(s.duplicatesRemoved + ' duplicate' + (s.duplicatesRemoved === 1 ? '' : 's') + ' removed before checking.');
   }
@@ -121,6 +157,7 @@ function renderSummary(s) {
 
   $('exportBox').hidden = false;
   $('filterRow').hidden = false;
+  $('resultsCaption').textContent = 'Check complete';
 }
 
 // --- Run -----------------------------------------------------------------
@@ -132,17 +169,26 @@ $('runBtn').addEventListener('click', async () => {
     return;
   }
   running = true;
-  allResults = [];
+  runEmails = emails;
+  allResults = new Array(emails.length);
+  stages = new Array(emails.length);
   activeFilter = 'all';
   document.querySelectorAll('#filterRow .chip').forEach((c) => c.classList.toggle('active', c.dataset.filter === 'all'));
   $('runBtn').disabled = true;
-  $('runBtn').textContent = 'Checking…';
+  $('runBtn').querySelector('span').textContent = 'Checking your list…';
   $('runStatus').textContent = '';
   $('progressWrap').hidden = false;
+  $('resultsCaption').textContent = 'Starting checks';
+  $('activityEmail').textContent = 'Starting check';
+  $('activityStage').textContent = 'Looking up domains and connecting to mail servers';
+  $('progressLabel').textContent = 'Preparing checks';
+  $('progressText').textContent = '0 / ' + emails.length;
+  $('progressBar').style.width = '0%';
   $('analysis').hidden = true;
   $('exportBox').hidden = true;
   $('filterRow').hidden = true;
-  document.querySelector('#resultsTable tbody').innerHTML = '<tr class="empty"><td colspan="4">Checking… results appear as they finish.</td></tr>';
+  document.querySelector('#resultsTable tbody').innerHTML = '';
+  renderTable();
   ['stTotal', 'stValid', 'stInvalid', 'stRisky', 'stUnknown', 'stDisp', 'stRate', 'stDeliverable'].forEach((id) => setStat(id, '–'));
 
   const options = {
@@ -186,12 +232,15 @@ $('runBtn').addEventListener('click', async () => {
         if (!line) continue;
         let msg;
         try { msg = JSON.parse(line); } catch (_) { continue; }
-        if (msg.type === 'result') {
-          allResults.push(msg.result);
-          const pct = Math.round((allResults.length / emails.length) * 100);
-          $('progressBar').style.width = pct + '%';
-          $('progressText').textContent = allResults.length + ' / ' + emails.length;
-          renderTable();
+        if (msg.type === 'stage') {
+          stages[msg.index] = msg;
+          updateRow(msg.index);
+          updateActivity(msg.index, msg.detail);
+        } else if (msg.type === 'result') {
+          allResults[msg.index] = msg.result;
+          stages[msg.index] = { stage: 'complete', detail: msg.result.reason };
+          updateRow(msg.index);
+          updateActivity(msg.index, msg.result.reason);
         } else if (msg.type === 'done') {
           summary = msg.summary;
         } else if (msg.type === 'error') {
@@ -201,7 +250,7 @@ $('runBtn').addEventListener('click', async () => {
     }
     if (summary) {
       renderSummary(summary);
-      $('runStatus').textContent = 'Done in ' + (summary.ms / 1000).toFixed(1) + 's — ' + summary.valid + ' valid of ' + summary.total + '.';
+      $('runStatus').textContent = 'Finished in ' + (summary.ms / 1000).toFixed(1) + 's. ' + summary.valid + ' of ' + summary.total + ' addresses confirmed.';
     } else {
       $('runStatus').textContent = 'Finished, but no summary was returned.';
     }
@@ -210,7 +259,7 @@ $('runBtn').addEventListener('click', async () => {
   } finally {
     running = false;
     $('runBtn').disabled = false;
-    $('runBtn').textContent = 'Verify list';
+    $('runBtn').querySelector('span').textContent = 'Check email list';
   }
 });
 

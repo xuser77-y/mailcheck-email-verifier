@@ -157,7 +157,7 @@ async function main() {
   check('greylisted then accepted -> valid', r.status === 'valid', JSON.stringify(r));
 
   r = await verifyEmail('slow@mock.test', { ...opts, timeoutMs: 1500 });
-  check('silent server -> unknown', r.status === 'unknown', JSON.stringify(r));
+  check('silent server -> unknown with the SMTP step identified', r.status === 'unknown' && /RCPT reply/.test(r.reason), JSON.stringify(r));
 
   r = await verifyEmail('not-an-email', opts);
   check('bad syntax -> invalid', r.status === 'invalid', JSON.stringify(r));
@@ -188,6 +188,15 @@ async function main() {
   {
     const savedMx = dns.promises.resolveMx;
     const savedFetch = global.fetch;
+    global.fetch = async (url) => ({
+      ok: true,
+      json: async () => String(url).includes('type=MX')
+        ? { Status: 0, Answer: [{ type: 15, data: '10 mail.mock.test.' }] }
+        : { Status: 0, Answer: [{ type: 1, data: '192.0.2.1' }] },
+    });
+    const recovered = await require('../lib/verifier')._test.lookupMx('recovered.test');
+    check('local ENOTFOUND is recovered by independent DNS lookup', recovered.records?.[0] === 'mail.mock.test', JSON.stringify(recovered));
+
     dns.promises.resolveMx = async () => {
       const e = new Error('queryMx EREFUSED');
       e.code = 'EREFUSED';
@@ -201,6 +210,14 @@ async function main() {
   }
 
   console.log('\nBulk list check:');
+  const observedStages = [];
+  const sameDomain = await verifyList(
+    ['valid@mock.test', 'info@mock.test'],
+    { ...opts, concurrency: 2, onStage: (_email, stage) => observedStages.push(stage) },
+  );
+  check('concurrent addresses share a completed MX lookup', sameDomain.every((x) => x.status === 'valid'), JSON.stringify(sameDomain));
+  check('live progress reports connection and mailbox stages', ['syntax', 'dns', 'connect', 'mailbox', 'complete'].every((stage) => observedStages.includes(stage)), JSON.stringify(observedStages));
+
   const list = await verifyList(
     ['valid@mock.test', 'invalid@mock.test', 'someone@catchall.test', 'x@mailinator.com', 'not-an-email'],
     { ...opts, concurrency: 3 },

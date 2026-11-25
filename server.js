@@ -101,14 +101,17 @@ const server = http.createServer(async (req, res) => {
       try {
         await verifyList(emails, {
           ...options,
-          onResult: (r) => {
+          onStage: (email, stage, detail, index) => {
+            res.write(JSON.stringify({ type: 'stage', index, email, stage, detail }) + '\n');
+          },
+          onResult: (r, index) => {
             counts[r.status] = (counts[r.status] || 0) + 1;
             if (r.domain) {
               byDomain[r.domain] = byDomain[r.domain] || { total: 0, valid: 0 };
               byDomain[r.domain].total++;
               if (r.status === 'valid') byDomain[r.domain].valid++;
             }
-            res.write(JSON.stringify({ type: 'result', result: r }) + '\n');
+            res.write(JSON.stringify({ type: 'result', index, result: r }) + '\n');
           },
         });
         const summary = {
