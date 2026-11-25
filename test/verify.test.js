@@ -184,6 +184,22 @@ async function main() {
   });
   check('dead proxy -> unknown (not a crash)', r.status === 'unknown', JSON.stringify(r));
 
+  console.log('\nLookup-failure check (regression: gmail must never read as "no MX"):');
+  {
+    const savedMx = dns.promises.resolveMx;
+    const savedFetch = global.fetch;
+    dns.promises.resolveMx = async () => {
+      const e = new Error('queryMx EREFUSED');
+      e.code = 'EREFUSED';
+      throw e;
+    };
+    global.fetch = async () => { throw new Error('network down'); };
+    const rr = await verifyEmail('someone@fail.test', opts);
+    check('all DNS lookups failing -> unknown, not invalid', rr.status === 'unknown' && /DNS lookup failed/.test(rr.reason), JSON.stringify(rr));
+    dns.promises.resolveMx = savedMx;
+    global.fetch = savedFetch;
+  }
+
   console.log('\nBulk list check:');
   const list = await verifyList(
     ['valid@mock.test', 'invalid@mock.test', 'someone@catchall.test', 'x@mailinator.com', 'not-an-email'],
