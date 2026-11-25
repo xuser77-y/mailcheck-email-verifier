@@ -62,6 +62,7 @@
               <div class="field"><label for="proxyUser">Username <span class="optional">Optional</span></label><input type="text" id="proxyUser" autocomplete="off"></div>
               <div class="field"><label for="proxyPass">Password <span class="optional">Optional</span></label><input type="password" id="proxyPass" autocomplete="off"></div>
             </div>
+            <div class="proxy-test-row"><button class="btn proxy-test-button" type="button" id="proxyTestBtn">Test connection</button><span id="proxyStatus" class="proxy-status" aria-live="polite">Checks this proxy against an SMTP server on port 25.</span></div>
           </details>
         </details>
         <button type="button" class="btn primary run-button" id="runBtn"><span>Check email list</span><span aria-hidden="true">→</span></button>
@@ -76,6 +77,7 @@
           <div class="progress-topline"><span id="progressLabel">Preparing checks</span><strong id="progressText">0 / 0</strong></div>
           <div class="progress-track"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
           <div class="live-activity" aria-live="polite"><span class="activity-pulse"></span><span><strong id="activityEmail">Waiting to start</strong><small id="activityStage">Each address will show its current step here.</small></span></div>
+          <p class="route-status" id="routeStatus" aria-live="polite" hidden></p>
         </div>
 
         <div class="stats" id="stats">

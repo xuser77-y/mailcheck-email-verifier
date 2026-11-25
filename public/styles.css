@@ -95,6 +95,12 @@ details[open] > summary .chevron { transform: rotate(180deg); }
 .optional { color: var(--muted); font-size: 10px; font-weight: 450; }
 .proxy-grid { grid-template-columns: 1fr 1fr; gap: 0 8px; }
 .proxy-grid .field:last-child { grid-column: 1 / -1; }
+.proxy-test-row { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
+.proxy-test-button { flex: 0 0 auto; padding: 7px 9px; font-size: 10px; }
+.proxy-test-button:disabled { cursor: progress; opacity: .65; }
+.proxy-status { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.proxy-status[data-state="success"] { color: var(--green); }
+.proxy-status[data-state="failure"] { color: var(--red); }
 .btn { display: inline-flex; justify-content: center; align-items: center; gap: 10px; padding: 10px 15px; border: 1px solid var(--line); border-radius: 9px; background: white; color: var(--ink); font-size: 12px; font-weight: 630; cursor: pointer; transition: background .15s, border-color .15s, transform .15s; }
 .btn:hover { border-color: #c6d0c8; background: #fafbf9; }
 .btn:focus-visible, .chip:focus-visible, .linklike:focus-visible { outline: 3px solid rgba(29,85,72,.18); outline-offset: 2px; }
@@ -119,6 +125,7 @@ details[open] > summary .chevron { transform: rotate(180deg); }
 .live-activity strong, .live-activity small { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live-activity strong { font-size: 11px; font-weight: 620; }
 .live-activity small { margin-top: 1px; color: var(--muted); font-size: 10px; }
+.route-status { margin: 10px 0 0 18px; color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 9px; margin-bottom: 19px; }
 .stat { min-height: 91px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
 .stat-label { display: block; color: var(--ink-soft); font-size: 10px; font-weight: 550; }

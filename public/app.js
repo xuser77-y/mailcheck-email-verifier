@@ -57,6 +57,52 @@ $('clearBtn').addEventListener('click', () => {
   updateCount();
 });
 
+$('proxyTestBtn').addEventListener('click', async () => {
+  const proxyHost = $('proxyHost').value.trim();
+  const status = $('proxyStatus');
+  if (!proxyHost) {
+    status.dataset.state = 'failure';
+    status.textContent = 'Enter a SOCKS5 host to test.';
+    $('proxyHost').focus();
+    return;
+  }
+
+  const button = $('proxyTestBtn');
+  button.disabled = true;
+  button.textContent = 'Testing…';
+  status.dataset.state = '';
+  status.textContent = 'Checking the proxy tunnel and port 25 access…';
+  try {
+    const response = await fetch('/api/proxy-check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ options: { proxy: {
+        host: proxyHost,
+        port: parseInt($('proxyPort').value, 10) || 1080,
+        username: $('proxyUser').value,
+        password: $('proxyPass').value,
+      } } }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || ('Server error ' + response.status));
+    status.dataset.state = result.ok ? 'success' : 'failure';
+    status.textContent = result.message;
+  } catch (error) {
+    status.dataset.state = 'failure';
+    status.textContent = 'Proxy test failed: ' + error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Test connection';
+  }
+});
+
+['proxyHost', 'proxyPort', 'proxyUser', 'proxyPass'].forEach((id) => {
+  $(id).addEventListener('input', () => {
+    $('proxyStatus').dataset.state = '';
+    $('proxyStatus').textContent = 'Proxy settings changed. Test the connection again before running the list.';
+  });
+});
+
 // --- Results rendering ---------------------------------------------------
 function badge(status) {
   const labels = { risky: 'Review', disposable: 'Disposable', pending: 'In progress' };
@@ -136,7 +182,7 @@ function renderSummary(s) {
     if (s.invalid) lines.push(s.invalid + ' invalid address' + (s.invalid === 1 ? '' : 'es') + ' — remove these, they will bounce.');
     if (s.risky) lines.push(s.risky + ' on catch-all domains — those servers accept everything, so the mailbox could not be confirmed. Treat them as “maybe”.');
     if (s.unknown) {
-      const timedOut = allResults.filter((r) => r && /timed out on port 25/i.test(r.reason || '')).length;
+      const timedOut = allResults.filter((r) => r && /timed out.*port 25/i.test(r.reason || '')).length;
       if (timedOut === s.unknown) {
         lines.push(s.unknown + ' checks timed out while opening SMTP on port 25. This usually means the network or hosting provider blocks outbound SMTP; these addresses are unconfirmed, not invalid. Ask the provider to allow outbound port 25, or run from a network that permits it.');
       } else {
@@ -181,6 +227,7 @@ $('runBtn').addEventListener('click', async () => {
   $('resultsCaption').textContent = 'Starting checks';
   $('activityEmail').textContent = 'Starting check';
   $('activityStage').textContent = 'Looking up domains and connecting to mail servers';
+  $('routeStatus').hidden = true;
   $('progressLabel').textContent = 'Preparing checks';
   $('progressText').textContent = '0 / ' + emails.length;
   $('progressBar').style.width = '0%';
@@ -206,6 +253,10 @@ $('runBtn').addEventListener('click', async () => {
       password: $('proxyPass').value,
     };
   }
+  $('routeStatus').textContent = proxyHost
+    ? 'Route: SOCKS5 proxy ' + proxyHost + ':' + options.proxy.port
+    : 'Route: direct connection (no SOCKS5 proxy configured)';
+  $('routeStatus').hidden = false;
 
   try {
     const res = await fetch('/api/verify', {
@@ -232,7 +283,13 @@ $('runBtn').addEventListener('click', async () => {
         if (!line) continue;
         let msg;
         try { msg = JSON.parse(line); } catch (_) { continue; }
-        if (msg.type === 'stage') {
+        if (msg.type === 'status') {
+          if (msg.message && msg.message.startsWith('Route:')) {
+            $('routeStatus').textContent = msg.message;
+            $('routeStatus').hidden = false;
+          }
+          $('progressLabel').textContent = msg.message || 'Preparing checks';
+        } else if (msg.type === 'stage') {
           stages[msg.index] = msg;
           updateRow(msg.index);
           updateActivity(msg.index, msg.detail);

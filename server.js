@@ -7,7 +7,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { verifyList } = require('./lib/verifier');
-const { findWorkingProxies, createRotator } = require('./lib/proxypool');
+const { findWorkingProxies, createRotator, testProxy } = require('./lib/proxypool');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -71,6 +71,24 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true });
     }
 
+    if (req.method === 'POST' && url.pathname === '/api/proxy-check') {
+      let body;
+      try {
+        body = JSON.parse(await readBody(req));
+      } catch (e) {
+        return sendJson(res, 400, { error: 'Invalid JSON body: ' + e.message });
+      }
+      const options = parseOptions(body);
+      if (!options.proxy) return sendJson(res, 400, { error: 'Enter a SOCKS5 proxy host first.' });
+      const ok = await testProxy(options.proxy);
+      return sendJson(res, 200, {
+        ok,
+        message: ok
+          ? 'Connected through this proxy and received an SMTP greeting on port 25.'
+          : 'This proxy did not complete an SMTP connection on port 25. Check the SOCKS5 host, port, credentials, and outbound access.',
+      });
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/verify') {
       let body;
       try {
@@ -102,6 +120,11 @@ const server = http.createServer(async (req, res) => {
       const started = Date.now();
       const sendStatus = (message) => res.write(JSON.stringify({ type: 'status', message }) + '\n');
       try {
+        if (!options.autoProxy) {
+          sendStatus(options.proxy
+            ? 'Route: SOCKS5 proxy ' + options.proxy.host + ':' + options.proxy.port
+            : 'Route: direct connection (no SOCKS5 proxy configured)');
+        }
         if (options.autoProxy) {
           // Auto mode: hunt for free proxies that pass port 25, then verify
           // through the pool, rotating whenever one stops answering.

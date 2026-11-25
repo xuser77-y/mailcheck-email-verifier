@@ -172,6 +172,14 @@ async function main() {
   check('role address flagged', r.status === 'valid' && r.flags.includes('role'), JSON.stringify(r));
 
   console.log('\nProxy check:');
+  const { testProxy } = require('../lib/proxypool');
+  const proxyCheck = await testProxy(
+    { host: '127.0.0.1', port: socksPort, username: '', password: '' },
+    3000,
+    { host: '127.0.0.1', port: MOCK_SMTP_PORT },
+  );
+  check('proxy preflight recognizes a reachable SMTP greeting', proxyCheck === true);
+
   r = await verifyEmail('valid@mock.test', {
     ...opts,
     proxy: { host: '127.0.0.1', port: socksPort, username: '', password: '' },
