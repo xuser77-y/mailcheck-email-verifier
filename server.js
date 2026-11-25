@@ -139,6 +139,7 @@ const server = http.createServer(async (req, res) => {
           const huntChunk = (exclude) => findWorkingProxies({
             scan: 60,
             want: 3,
+            oversample: 1,
             exclude,
             onProgress: ({ tested, total, found }) =>
               sendStatus('Testing proxies… ' + tested + '/' + total + ' tried, ' + found + ' working so far'),
@@ -147,6 +148,7 @@ const server = http.createServer(async (req, res) => {
             const working = await findWorkingProxies({
               scan: 100,
               want: 3,
+              oversample: 1,
               onProgress: ({ tested, total, found }) =>
                 sendStatus('Testing proxies… ' + tested + '/' + total + ' tried, ' + found + ' working so far'),
             });
