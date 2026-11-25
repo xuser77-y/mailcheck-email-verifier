@@ -250,6 +250,25 @@ async function main() {
   const wokenProxy = await slowHunter.ensure();
   check('checker wakes on the FIRST landed proxy, not the full pool', wokenProxy === goodProxy2 && Date.now() - wakeStart < 400, 'elapsed=' + (Date.now() - wakeStart) + 'ms');
 
+  let recycleCalls = 0;
+  let recycleSawCleared = false;
+  const recycleRotator = createRotator([], {
+    maxRefills: 10,
+    hunt: async (exclude) => {
+      recycleCalls++;
+      if (recycleCalls === 1) {
+        exclude.add('1.2.3.4:1080'); // the hunt tested the last untried proxy
+        const none = [];
+        none.freshCount = 0; // nothing untried existed — list exhausted
+        return none;
+      }
+      recycleSawCleared = !exclude.has('1.2.3.4:1080');
+      return [goodProxy];
+    },
+  });
+  r = await verifyEmail('valid@mock.test', { ...opts, rotator: recycleRotator });
+  check('list exhausted -> hunter recycles the tried-list and keeps hunting', r.status === 'valid' && recycleSawCleared, JSON.stringify(r));
+
   console.log('\nLookup-failure check (regression: gmail must never read as "no MX"):');
   {
     const savedMx = dns.promises.resolveMx;
