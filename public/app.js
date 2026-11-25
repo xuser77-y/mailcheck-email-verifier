@@ -257,6 +257,8 @@ $('runBtn').addEventListener('click', async () => {
     ? 'Route: SOCKS5 proxy ' + proxyHost + ':' + options.proxy.port
     : 'Route: direct connection (no SOCKS5 proxy configured)';
   $('routeStatus').hidden = false;
+  $('huntStatus').textContent = '';
+  $('huntStatus').hidden = true;
 
   try {
     const res = await fetch('/api/verify', {
@@ -287,6 +289,12 @@ $('runBtn').addEventListener('click', async () => {
           if (msg.message && msg.message.startsWith('Route:')) {
             $('routeStatus').textContent = msg.message;
             $('routeStatus').hidden = false;
+          }
+          if (msg.message && /hunt|pool|prox/i.test(msg.message)) {
+            // Hunter progress stays on screen for the whole run — the
+            // latest hunt state is always visible, never overwritten.
+            $('huntStatus').textContent = msg.message;
+            $('huntStatus').hidden = false;
           }
           $('progressLabel').textContent = msg.message || 'Preparing checks';
         } else if (msg.type === 'stage') {

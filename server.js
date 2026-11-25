@@ -80,11 +80,12 @@ const server = http.createServer(async (req, res) => {
       }
       const options = parseOptions(body);
       if (!options.proxy) return sendJson(res, 400, { error: 'Enter a SOCKS5 proxy host first.' });
-      const ok = await testProxy(options.proxy);
+      const probe = await testProxy(options.proxy);
       return sendJson(res, 200, {
-        ok,
-        message: ok
-          ? 'Connected through this proxy and received an SMTP greeting on port 25.'
+        ok: probe.ok,
+        ms: probe.ms,
+        message: probe.ok
+          ? 'Connected through this proxy and received an SMTP greeting on port 25 in ' + probe.ms + ' ms.'
           : 'This proxy did not complete an SMTP connection on port 25. Check the SOCKS5 host, port, credentials, and outbound access.',
       });
     }
@@ -131,35 +132,33 @@ const server = http.createServer(async (req, res) => {
           // free proxies that pass port 25, then verify through the pool,
           // rotating to the next proxy the moment one times out.
           sendStatus('Hunting for free proxies that pass port 25…');
-          // When the pool runs dry mid-run, the rotator calls this to hunt a
-          // fresh batch (skipping proxies already tried) — the run loops
-          // like this until the whole list is done.
-          let refillRound = 0;
-          const onRefill = async (exclude) => {
-            refillRound++;
-            sendStatus('Proxy pool ran dry — hunting a fresh batch (round ' + refillRound + ')…');
-            const fresh = await findWorkingProxies({
-              scan: 300,
-              want: 8,
-              exclude,
-              onProgress: ({ tested, total, found }) =>
-                sendStatus('Testing proxies… ' + tested + '/' + total + ' tried, ' + found + ' working so far'),
-            });
-            sendStatus(fresh.length
-              ? 'Found ' + fresh.length + ' fresh ' + (fresh.length === 1 ? 'proxy' : 'proxies') + ' — continuing.'
-              : 'No fresh proxies this round — retrying the earlier pool.');
-            return fresh;
-          };
+          // THE HUNTER NEVER SLEEPS: the run starts as soon as the first
+          // few proxies answer, and a background hunter keeps the pool
+          // topped up for the whole run — checks never freeze waiting for
+          // a refill. The hunter skips proxies already tried this run.
+          const huntChunk = (exclude) => findWorkingProxies({
+            scan: 60,
+            want: 3,
+            exclude,
+            onProgress: ({ tested, total, found }) =>
+              sendStatus('Testing proxies… ' + tested + '/' + total + ' tried, ' + found + ' working so far'),
+          });
           try {
             const working = await findWorkingProxies({
               scan: 100,
-              want: 8,
+              want: 3,
               onProgress: ({ tested, total, found }) =>
                 sendStatus('Testing proxies… ' + tested + '/' + total + ' tried, ' + found + ' working so far'),
             });
             if (working.length) {
-              options.rotator = createRotator(working, { onRefill });
-              sendStatus('Route: proxy pool — ' + working.length + ' working ' + (working.length === 1 ? 'proxy' : 'proxies') + ', rotating to the next on the first timeout, refilling when the pool runs dry.');
+              options.rotator = createRotator(working, {
+                hunt: huntChunk,
+                targetPool: 8,
+                lowWater: 3,
+                onEvent: (message) => sendStatus(message),
+              });
+              options.rotator.start();
+              sendStatus('Route: proxy pool — starting with ' + working.length + ' working ' + (working.length === 1 ? 'proxy' : 'proxies') + ', hunter topping up in the background, rotating on the first timeout.');
             } else {
               sendStatus('Route: direct connection (no working proxy found). If your ISP blocks port 25, mailbox checks will come back "unknown".');
             }
@@ -183,6 +182,7 @@ const server = http.createServer(async (req, res) => {
             res.write(JSON.stringify({ type: 'result', index, result: r }) + '\n');
           },
         });
+        if (options.rotator) options.rotator.stop();
         const summary = {
           ...counts,
           duplicatesRemoved: rawList.length - emails.length,

@@ -178,7 +178,7 @@ async function main() {
     3000,
     { host: '127.0.0.1', port: MOCK_SMTP_PORT },
   );
-  check('proxy preflight recognizes a reachable SMTP greeting', proxyCheck === true);
+  check('proxy preflight recognizes a reachable SMTP greeting', proxyCheck.ok === true && Number.isFinite(proxyCheck.ms), JSON.stringify(proxyCheck));
 
   r = await verifyEmail('valid@mock.test', {
     ...opts,
@@ -215,6 +215,19 @@ async function main() {
     rotator: createRotator([deadProxy], { onRefill: async () => [], maxRefills: 2 }),
   });
   check('no proxies anywhere -> unknown after bounded refills', r.status === 'unknown', JSON.stringify(r));
+
+  console.log('\nSpeed checks (round-robin + background hunter):');
+  const socksSrv2 = await mockSocksServer();
+  const goodProxy2 = { host: '127.0.0.1', port: socksSrv2.address().port, username: '', password: '' };
+  const rr = createRotator([goodProxy, goodProxy2]);
+  check('rotator spreads checks across the pool', rr.current() !== rr.current());
+
+  const bg = createRotator([goodProxy], { hunt: async () => [goodProxy2], targetPool: 2, lowWater: 3 });
+  bg.start();
+  await new Promise((res) => setTimeout(res, 50));
+  check('hunter tops the pool up in the background', bg.aliveCount() === 2, 'alive=' + bg.aliveCount());
+  bg.stop();
+  socksSrv2.close();
 
   console.log('\nLookup-failure check (regression: gmail must never read as "no MX"):');
   {
